@@ -12,6 +12,8 @@ from .sources import Repo
 MAX_EMBEDS_PER_MESSAGE = 10
 MAX_TITLE = 256
 MAX_DESCRIPTION = 4096
+# 6000 is the real cap across all embeds in one message; leave room for `content`.
+MAX_CHARS_PER_MESSAGE = 5800
 
 COLOR_TRENDING = 0x2DA44E
 COLOR_SEARCH = 0x0969DA
@@ -19,6 +21,9 @@ COLOR_SEARCH = 0x0969DA
 
 def _truncate(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+MAX_TOPICS = 6
 
 
 def build_embed(repo: Repo) -> dict:
@@ -29,17 +34,46 @@ def build_embed(repo: Repo) -> dict:
         footer_bits.append(repo.language)
     footer_bits.append(repo.source)
 
+    description = _truncate(repo.blurb, MAX_DESCRIPTION)
+    if repo.topics:
+        tags = " ".join(f"`{t}`" for t in repo.topics[:MAX_TOPICS])
+        # Budget the tag line against the same 4096-char ceiling as the text.
+        if len(description) + len(tags) + 2 <= MAX_DESCRIPTION:
+            description = f"{description}\n{tags}" if description else tags
+
     return {
         "title": _truncate(repo.full_name, MAX_TITLE),
         "url": repo.url,
-        "description": _truncate(repo.description, MAX_DESCRIPTION),
+        "description": description,
         "color": COLOR_TRENDING if repo.source == "trending" else COLOR_SEARCH,
         "footer": {"text": " · ".join(footer_bits)},
     }
 
 
-def chunk(repos: list[Repo], size: int = MAX_EMBEDS_PER_MESSAGE) -> list[list[Repo]]:
-    return [repos[i : i + size] for i in range(0, len(repos), size)]
+def embed_chars(embed: dict) -> int:
+    """Chars Discord counts toward the per-message budget (url does not count)."""
+    return len(embed["title"]) + len(embed["description"]) + len(embed["footer"]["text"])
+
+
+def chunk_embeds(
+    embeds: list[dict],
+    max_count: int = MAX_EMBEDS_PER_MESSAGE,
+    max_chars: int = MAX_CHARS_PER_MESSAGE,
+) -> list[list[dict]]:
+    """Batch embeds under both of Discord's caps: 10 per message and 6000 chars."""
+    batches: list[list[dict]] = []
+    current: list[dict] = []
+    used = 0
+    for embed in embeds:
+        size = embed_chars(embed)
+        if current and (len(current) >= max_count or used + size > max_chars):
+            batches.append(current)
+            current, used = [], 0
+        current.append(embed)
+        used += size
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _post(url: str, payload: dict, session: requests.Session, timeout: int) -> None:
@@ -64,9 +98,9 @@ def send(
 ) -> int:
     """Send repos as embeds. Returns the number of HTTP requests made."""
     http = session or requests.Session()
-    batches = chunk(repos)
+    batches = chunk_embeds([build_embed(r) for r in repos])
     for i, batch in enumerate(batches):
-        payload: dict = {"embeds": [build_embed(r) for r in batch]}
+        payload: dict = {"embeds": batch}
         if i == 0 and header:
             payload["content"] = _truncate(header, 2000)
         _post(webhook_url, payload, http, timeout)

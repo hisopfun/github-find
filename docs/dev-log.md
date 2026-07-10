@@ -49,3 +49,39 @@
 **驗證：** 本機先用 `.venv/bin/pytest -q` 重現同一個錯誤，修完後 `pytest` 與 `python -m pytest` 兩種方式皆 16 passed。
 
 **教訓：** 本機驗證指令要跟 CI 用同一個。
+
+## 2026-07-10 — 每個 repo 附上說明（README 摘要 + topics）
+
+**Model:** Claude Opus 4.8 (1M context)
+
+需求：Discord 訊息只有 GitHub 一行 description，太簡略。改抓 README 開頭第一段散文 + topics 標籤。
+
+**取捨（已向使用者說明）：** 選了免費來源（GitHub API），所以說明是**英文原文**，沒有中文翻譯。要中文摘要需經 LLM，需額外的 `ANTHROPIC_API_KEY` 與 API 費用。
+
+### 新增 `enrich.py`
+
+`summarize_readme()` 從 README 找第一段真正的散文，需跳過的結構性內容：HTML 註解、程式碼區塊、圖片/logo、badge（shields.io 等）、標題、bullet／編號清單、表格、導覽列連結。
+
+### 實測驅動的兩次修正
+
+1. **`oven-sh/bun` 抓到導覽列**：`Documentation • Discord • Issues • Roadmap`。
+   加 `_is_link_nav()`：把連結（markdown、`<a>`、裸 URL）移除後，若剩下的只有分隔符號（•｜-）即判定為導覽列。同時處理 HTML entity（`&nbsp;`）。
+
+2. **`x4gKing/X4G` 抓到一行波斯語 YouTube 連結**。
+   同一函式再加一條：移除連結後剩餘文字若少於 25 字元，代表整行只是「標籤 + 連結」，不是說明。
+   注意不能誤殺「內文剛好含有一個 URL」的正常句子——已加測試 `test_keeps_prose_that_merely_contains_a_url`。
+
+實測 10 個真實 README，10/10 都抓到正確的介紹句。
+
+### 連帶發現：Discord 6000 字元上限
+
+說明變長後，原本只檢查「一則訊息最多 10 個 embed」不夠了 —— Discord 同時限制**單則訊息所有 embed 加總 6000 字元**。原本一行 description 時遠遠碰不到，現在每個 embed 約 450 字元，10 個就逼近上限。
+
+`chunk()` 改為 `chunk_embeds()`，同時受兩個上限約束。以最壞情況（10 個 repo 各 350 字摘要 + topics）實測為 4180 字元、單則訊息，上限邏輯作為保險存在。
+
+### 驗證
+
+- `pytest -q` → 39 passed（新增 16 個測試）。
+- 10 個真實 README 的摘要品質逐一目視檢查。
+- `--dry-run` 打真實 GitHub。
+- 假 webhook 收最壞情況 payload，確認 10-embed 與 6000 字元雙上限皆未突破。

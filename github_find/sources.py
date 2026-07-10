@@ -32,10 +32,17 @@ class Repo:
     stars: int
     stars_gained: Optional[int]  # None when the source can't tell us
     source: str
+    topics: tuple = ()  # filled in later by enrich.py
+    summary: str = ""
 
     @property
     def sort_key(self) -> tuple:
         return (self.stars_gained or 0, self.stars)
+
+    @property
+    def blurb(self) -> str:
+        """Best available explanation of what this repo is."""
+        return self.summary or self.description
 
 
 def _int(text: str) -> int:

@@ -9,6 +9,7 @@ import sys
 import requests
 
 from . import discord
+from .enrich import enrich
 from .sources import Repo, combine, merge, scrape_trending, search_recent
 
 SINCE_LABEL = {"daily": "today", "weekly": "this week", "monthly": "this month"}
@@ -69,6 +70,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="source=both: fraction of slots reserved for newly-created repos",
     )
     p.add_argument("--dry-run", action="store_true", help="print instead of posting")
+    p.add_argument(
+        "--no-enrich",
+        action="store_true",
+        help="skip README/topics lookup (2 fewer API calls per repo)",
+    )
     return p.parse_args(argv)
 
 
@@ -86,13 +92,18 @@ def main(argv: list[str] | None = None) -> int:
         print("no repos found; nothing to post", file=sys.stderr)
         return 0
 
+    if not args.no_enrich:
+        repos = enrich(repos, token=token)
+
     if args.dry_run:
         print(format_header(args, len(repos)))
         for r in repos:
             gained = f"+{r.stars_gained}" if r.stars_gained is not None else "-"
-            print(f"  {r.full_name:<45} ⭐{r.stars:<8,} {gained:<8} [{r.source}] {r.language or ''}")
-            if r.description:
-                print(f"      {r.description[:100]}")
+            print(f"\n  {r.full_name:<45} ⭐{r.stars:<8,} {gained:<8} [{r.source}] {r.language or ''}")
+            if r.blurb:
+                print(f"      {r.blurb}")
+            if r.topics:
+                print(f"      topics: {', '.join(r.topics[:discord.MAX_TOPICS])}")
         return 0
 
     requests_made = discord.send(webhook, repos, header=format_header(args, len(repos)))

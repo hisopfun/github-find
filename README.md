@@ -17,6 +17,19 @@
 
 若 trending 頁面改版導致爬蟲失效，`both` 模式會印出警告並自動退回只用 Search API。
 
+## 每個 repo 的說明
+
+GitHub 那句一行 description 常常很簡略，甚至是空的。所以每個 repo 會額外抓：
+
+- **README 開頭的第一段散文** —— 跳過 badge、logo、導覽列連結、bullet 連結列表、程式碼區塊，找到真正「這是什麼」的那一段，最長 350 字。
+- **topics 標籤** —— 最多 6 個，顯示在說明下方。
+
+抓不到 README（例如 repo 沒有 README）就退回原本的一行 description，不會讓整批推送失敗。
+
+⚠️ **說明是英文原文**，因為內容直接取自專案自己的 README。要中文摘要就得經過 LLM 翻譯改寫，那需要 `ANTHROPIC_API_KEY` 且每次推送會產生 API 費用——目前沒有做。
+
+代價是每個 repo 多兩次 GitHub API 呼叫（repo metadata + README）。未帶 token 時 API 上限是 60 次/小時，預設 `--limit 10` 會用掉約 21 次，還算安全；在 GitHub Actions 上有 `GITHUB_TOKEN`，上限是 5000 次/小時。不想要這些呼叫就加 `--no-enrich`。
+
 ## 設定
 
 ```bash
@@ -50,6 +63,7 @@ python -m github_find.main --language python --since weekly
 | `--min-stars` | `10` | search：最低星數 |
 | `--limit` | `10` | 最多推送幾個 |
 | `--search-share` | `0.3` | `both` 模式下保留給新項目的名額比例 |
+| `--no-enrich` | off | 跳過 README/topics 抓取，每個 repo 少兩次 API 呼叫 |
 | `--dry-run` | off | 印出來就好，不發送 |
 
 環境變數：`DISCORD_WEBHOOK_URL`（必要，除非 `--dry-run`）、`GITHUB_TOKEN`（選用，把 Search API 速率上限從 10/min 拉到 30/min）。
