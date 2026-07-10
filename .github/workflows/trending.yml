@@ -1,0 +1,42 @@
+name: Post GitHub trending to Discord
+
+on:
+  schedule:
+    - cron: "0 1 * * *" # 01:00 UTC = 09:00 Asia/Taipei
+  workflow_dispatch:
+    inputs:
+      language:
+        description: "Filter by language (e.g. python). Leave empty for all."
+        required: false
+      dry_run:
+        description: "Print instead of posting"
+        type: boolean
+        default: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Post to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Raises the Search API rate limit from 10/min to 30/min.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Via env, never interpolated into the shell command: `inputs.language`
+          # is free-form text and would otherwise be a command-injection vector.
+          LANGUAGE: ${{ inputs.language }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(--limit 10)
+          if [ -n "$LANGUAGE" ]; then args+=(--language "$LANGUAGE"); fi
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          python -m github_find.main "${args[@]}"
