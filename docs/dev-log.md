@@ -35,3 +35,17 @@
 ### 尚未做
 
 - 沒有「已推送過」的去重，連日上榜的項目會重複出現。需要的話加一個 state 檔記 `full_name`。
+
+## 2026-07-10 — 修 CI：pytest 找不到 github_find
+
+**Model:** Claude Opus 4.8 (1M context)
+
+**症狀：** push 後 `tests` workflow 失敗 —— `ModuleNotFoundError: No module named 'github_find'`（collection 階段，兩個測試檔都掛）。
+
+**原因：** 本機驗證用的是 `python -m pytest`，`-m` 會把 cwd 插進 `sys.path`；CI 跑的是 `pytest` 執行檔，不會。測試本身沒問題，是我的驗證方式與 CI 不一致，掩蓋了缺少 import path 設定的事實。
+
+**修法：** 新增 `pyproject.toml`，設 `[tool.pytest.ini_options] pythonpath = ["."]`，讓兩種呼叫方式行為一致。workflow 的 pip install 改為 `"pytest>=7"`（`pythonpath` 選項需要 7+）。
+
+**驗證：** 本機先用 `.venv/bin/pytest -q` 重現同一個錯誤，修完後 `pytest` 與 `python -m pytest` 兩種方式皆 16 passed。
+
+**教訓：** 本機驗證指令要跟 CI 用同一個。

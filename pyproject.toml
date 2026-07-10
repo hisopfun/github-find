@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Put the repo root on sys.path so `pytest` and `python -m pytest` behave the
+# same; only the latter adds the cwd implicitly.
+pythonpath = ["."]
+testpaths = ["tests"]
